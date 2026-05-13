@@ -5,10 +5,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ── CONFIG ──────────────────────────────────────────────────────────────────
-define('SECRET_KEY',    'Kite@Bridge2024');
+define('SECRET_KEY',    'Kite@1234');
 define('SMTP_HOST',     'smtp.rediffmailpro.com');
 define('SMTP_USER',     'recognition@khazanajewellery.com');
-define('SMTP_PASS',     'YOUR_REDIFFMAIL_PASSWORD_HERE');   // ← replace this
+define('SMTP_PASS',     'Reset@123');   // ← replace this
 define('SMTP_PORT',     587);
 define('SMTP_FROM',     'recognition@khazanajewellery.com');
 define('SMTP_FROMNAME', 'KITE Portal - Khazana Jewellery');
