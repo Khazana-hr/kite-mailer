@@ -1,9 +1,3 @@
-# Railway deployment config for KITE Mailer PHP bridge
-# This tells Railway to use PHP and serve sendmail.php via a web server
-
-[phases.setup]
-nixPkgs = ["php82", "php82Packages.composer"]
-
 [phases.install]
 cmds = ["composer install --no-dev --optimize-autoloader"]
 
