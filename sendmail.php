@@ -1,11 +1,12 @@
 <?php
 // KITE Portal — SMTP Bridge
+// Uses port 25 (unencrypted) — Railway blocks 465/587
 
 define('SECRET_KEY',    'Kite@1234');
 define('SMTP_HOST',     'smtp.rediffmailpro.com');
 define('SMTP_USER',     'recognition@khazanajewellery.com');
 define('SMTP_PASS',     'Reset@123');
-define('SMTP_PORT',     587);
+define('SMTP_PORT',     25);
 define('SMTP_FROM',     'recognition@khazanajewellery.com');
 define('SMTP_FROMNAME', 'KITE Portal - Khazana Jewellery');
 
@@ -44,14 +45,12 @@ if (!filter_var($data['to'], FILTER_VALIDATE_EMAIL)) {
     exit;
 }
 
-$to      = $data['to'];
-$subject = $data['subject'];
-$body    = $data['body'];
-
-$boundary = md5(uniqid());
-$date     = date('r');
-$msgId    = '<' . uniqid() . '@khazanajewellery.com>';
-
+$to        = $data['to'];
+$subject   = $data['subject'];
+$body      = $data['body'];
+$boundary  = md5(uniqid());
+$date      = date('r');
+$msgId     = '<' . uniqid() . '@khazanajewellery.com>';
 $plainText = strip_tags(str_replace(
     ['<br>', '<br/>', '<br />', '</p>', '</div>', '</tr>'],
     "\n", $body
@@ -79,7 +78,6 @@ $tmpFile = tempnam(sys_get_temp_dir(), 'kite_');
 file_put_contents($tmpFile, $rawEmail);
 $fp = fopen($tmpFile, 'r');
 
-// Capture verbose debug output
 $verbose = fopen('php://temp', 'w+');
 
 $ch = curl_init();
@@ -89,7 +87,7 @@ curl_setopt_array($ch, [
     CURLOPT_MAIL_RCPT      => ['<' . $to . '>'],
     CURLOPT_USERNAME       => SMTP_USER,
     CURLOPT_PASSWORD       => SMTP_PASS,
-    CURLOPT_USE_SSL        => CURLUSESSL_ALL,
+    CURLOPT_USE_SSL        => CURLUSESSL_TRY,
     CURLOPT_READDATA       => $fp,
     CURLOPT_UPLOAD         => true,
     CURLOPT_INFILESIZE     => strlen($rawEmail),
@@ -102,14 +100,12 @@ curl_setopt_array($ch, [
 $result = curl_exec($ch);
 $errno  = curl_errno($ch);
 $errmsg = curl_error($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 fclose($fp);
 unlink($tmpFile);
 
-// Read verbose log
 rewind($verbose);
-$verboseLog = stream_get_contents($verbose);
+$verboseLog = substr(stream_get_contents($verbose), 0, 800);
 fclose($verbose);
 
 if ($errno) {
@@ -118,11 +114,8 @@ if ($errno) {
         'status'  => 'error',
         'message' => 'SMTP error: ' . $errmsg,
         'errno'   => $errno,
-        'debug'   => substr($verboseLog, 0, 1000)
+        'debug'   => $verboseLog
     ]);
 } else {
-    echo json_encode([
-        'status'  => 'success',
-        'message' => 'Email sent to ' . $to
-    ]);
+    echo json_encode(['status' => 'success', 'message' => 'Email sent to ' . $to]);
 }
