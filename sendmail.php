@@ -1,18 +1,13 @@
 <?php
-// ═══════════════════════════════════════════════════════════════════════════
-// KITE Portal — SMTP Bridge (sendmail.php)
-// Self-contained: uses PHP's built-in curl (no Composer needed)
-// ═══════════════════════════════════════════════════════════════════════════
+// KITE Portal — SMTP Bridge
 
-// ── CONFIG ──────────────────────────────────────────────────────────────────
 define('SECRET_KEY',    'Kite@1234');
 define('SMTP_HOST',     'smtp.rediffmailpro.com');
 define('SMTP_USER',     'recognition@khazanajewellery.com');
-define('SMTP_PASS',     'Reset@123');   // ← replace this
+define('SMTP_PASS',     'Reset@123');
 define('SMTP_PORT',     587);
 define('SMTP_FROM',     'recognition@khazanajewellery.com');
 define('SMTP_FROMNAME', 'KITE Portal - Khazana Jewellery');
-// ────────────────────────────────────────────────────────────────────────────
 
 header('Content-Type: application/json');
 
@@ -45,7 +40,7 @@ if ($data['password'] !== SECRET_KEY) {
 
 if (!filter_var($data['to'], FILTER_VALIDATE_EMAIL)) {
     http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => 'Invalid email: ' . $data['to']]);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid email']);
     exit;
 }
 
@@ -84,6 +79,9 @@ $tmpFile = tempnam(sys_get_temp_dir(), 'kite_');
 file_put_contents($tmpFile, $rawEmail);
 $fp = fopen($tmpFile, 'r');
 
+// Capture verbose debug output
+$verbose = fopen('php://temp', 'w+');
+
 $ch = curl_init();
 curl_setopt_array($ch, [
     CURLOPT_URL            => 'smtp://' . SMTP_HOST . ':' . SMTP_PORT,
@@ -97,18 +95,34 @@ curl_setopt_array($ch, [
     CURLOPT_INFILESIZE     => strlen($rawEmail),
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_TIMEOUT        => 30,
+    CURLOPT_VERBOSE        => true,
+    CURLOPT_STDERR         => $verbose,
 ]);
 
 $result = curl_exec($ch);
 $errno  = curl_errno($ch);
 $errmsg = curl_error($ch);
+$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 fclose($fp);
 unlink($tmpFile);
 
+// Read verbose log
+rewind($verbose);
+$verboseLog = stream_get_contents($verbose);
+fclose($verbose);
+
 if ($errno) {
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'SMTP error: ' . $errmsg]);
+    echo json_encode([
+        'status'  => 'error',
+        'message' => 'SMTP error: ' . $errmsg,
+        'errno'   => $errno,
+        'debug'   => substr($verboseLog, 0, 1000)
+    ]);
 } else {
-    echo json_encode(['status' => 'success', 'message' => 'Email sent to ' . $to]);
+    echo json_encode([
+        'status'  => 'success',
+        'message' => 'Email sent to ' . $to
+    ]);
 }
