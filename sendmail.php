@@ -1,126 +1,114 @@
 <?php
 // ═══════════════════════════════════════════════════════════════════════════
 // KITE Portal — SMTP Bridge (sendmail.php)
-// Deployed on Railway.app (free tier) as a PHP service.
-//
-// Folder structure (on Railway / GitHub repo):
-//   kite-mailer/
-//   ├── sendmail.php     ← this file
-//   └── composer.json    ← tells Railway to install PHPMailer automatically
-//
-// PHPMailer is installed automatically by Railway via Composer.
-// No manual downloading needed.
+// Self-contained: uses PHP's built-in curl (no Composer needed)
 // ═══════════════════════════════════════════════════════════════════════════
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
-
-// Composer autoloader (used on Railway / any hosted environment with composer install)
-if (file_exists(__DIR__ . '/vendor/autoload.php')) {
-    require __DIR__ . '/vendor/autoload.php';
-// Manual src/ fallback (used on shared hosting without Composer)
-} else {
-    require __DIR__ . '/src/PHPMailer.php';
-    require __DIR__ . '/src/SMTP.php';
-    require __DIR__ . '/src/Exception.php';
-}
-
-// ── CONFIG — fill these in ──────────────────────────────────────────────────
-define('SECRET_KEY',    'Kite@1234');                      // ← change this to any strong password (must match Code.gs)
-define('SMTP_HOST',     'smtp.rediffmailpro.com');              // Rediffmail Pro SMTP server
-define('SMTP_USER',     'recognition@khazanajewellery.com');    // SMTP login / sender address
-define('SMTP_PASS',     'Reset@123');       // ← replace with your actual Rediffmail Pro password
-define('SMTP_PORT',     587);                                   // 587 = STARTTLS
-define('SMTP_SECURE',   'tls');                                 // 'tls' for port 587 (STARTTLS)
-define('SMTP_FROM',     'recognition@khazanajewellery.com');    // from address
-define('SMTP_FROMNAME', 'KITE Portal — Khazana Jewellery');
-// ───────────────────────────────────────────────────────────────────────────
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+define('SECRET_KEY',    'Kite@Bridge2024');
+define('SMTP_HOST',     'smtp.rediffmailpro.com');
+define('SMTP_USER',     'recognition@khazanajewellery.com');
+define('SMTP_PASS',     'YOUR_REDIFFMAIL_PASSWORD_HERE');   // ← replace this
+define('SMTP_PORT',     587);
+define('SMTP_FROM',     'recognition@khazanajewellery.com');
+define('SMTP_FROMNAME', 'KITE Portal - Khazana Jewellery');
+// ────────────────────────────────────────────────────────────────────────────
 
 header('Content-Type: application/json');
 
-// Only accept POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed']);
     exit;
 }
 
-// Read and decode JSON body
-$raw  = file_get_contents('php://input');
-$data = json_decode($raw, true);
-
+$data = json_decode(file_get_contents('php://input'), true);
 if (!$data) {
     http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => 'Invalid JSON body']);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid JSON']);
     exit;
 }
 
-// Validate required fields
-$required = ['to', 'subject', 'body', 'password'];
-foreach ($required as $field) {
-    if (empty($data[$field])) {
+foreach (['to', 'subject', 'body', 'password'] as $f) {
+    if (empty($data[$f])) {
         http_response_code(400);
-        echo json_encode(['status' => 'error', 'message' => 'Missing required field: ' . $field]);
+        echo json_encode(['status' => 'error', 'message' => 'Missing: ' . $f]);
         exit;
     }
 }
 
-// Validate secret key
 if ($data['password'] !== SECRET_KEY) {
     http_response_code(401);
     echo json_encode(['status' => 'error', 'message' => 'Unauthorized']);
     exit;
 }
 
-// Validate email address
 if (!filter_var($data['to'], FILTER_VALIDATE_EMAIL)) {
     http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => 'Invalid recipient email address']);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid email: ' . $data['to']]);
     exit;
 }
 
-// ── Send via PHPMailer ──────────────────────────────────────────────────────
-try {
-    $mail = new PHPMailer(true);
+$to      = $data['to'];
+$subject = $data['subject'];
+$body    = $data['body'];
 
-    // Server settings
-    $mail->isSMTP();
-    $mail->Host       = SMTP_HOST;
-    $mail->SMTPAuth   = true;
-    $mail->Username   = SMTP_USER;
-    $mail->Password   = SMTP_PASS;
-    $mail->SMTPSecure = SMTP_SECURE;
-    $mail->Port       = SMTP_PORT;
-    $mail->CharSet    = 'UTF-8';
+$boundary = md5(uniqid());
+$date     = date('r');
+$msgId    = '<' . uniqid() . '@khazanajewellery.com>';
 
-    // Sender & recipient
-    $mail->setFrom(SMTP_FROM, SMTP_FROMNAME);
-    $mail->addAddress($data['to']);
+$plainText = strip_tags(str_replace(
+    ['<br>', '<br/>', '<br />', '</p>', '</div>', '</tr>'],
+    "\n", $body
+));
 
-    // Reply-To (optional — same as sender by default)
-    $mail->addReplyTo(SMTP_FROM, SMTP_FROMNAME);
+$rawEmail =
+    "Date: $date\r\n" .
+    "To: $to\r\n" .
+    "From: " . SMTP_FROMNAME . " <" . SMTP_FROM . ">\r\n" .
+    "Reply-To: " . SMTP_FROM . "\r\n" .
+    "Message-ID: $msgId\r\n" .
+    "Subject: $subject\r\n" .
+    "MIME-Version: 1.0\r\n" .
+    "Content-Type: multipart/alternative; boundary=\"$boundary\"\r\n" .
+    "\r\n" .
+    "--$boundary\r\n" .
+    "Content-Type: text/plain; charset=UTF-8\r\n\r\n" .
+    $plainText . "\r\n" .
+    "--$boundary\r\n" .
+    "Content-Type: text/html; charset=UTF-8\r\n\r\n" .
+    $body . "\r\n" .
+    "--$boundary--\r\n";
 
-    // Content — body is treated as HTML; plain text auto-generated
-    $mail->isHTML(true);
-    $mail->Subject = $data['subject'];
-    $mail->Body    = $data['body'];
-    $mail->AltBody = strip_tags(str_replace(['<br>', '<br/>', '<br />', '</p>', '</div>', '</tr>'], "\n", $data['body']));
+$tmpFile = tempnam(sys_get_temp_dir(), 'kite_');
+file_put_contents($tmpFile, $rawEmail);
+$fp = fopen($tmpFile, 'r');
 
-    // Optional file attachment from a public URL
-    if (!empty($data['attachmentUrl']) && !empty($data['attachmentName'])) {
-        $fileContent = @file_get_contents($data['attachmentUrl']);
-        if ($fileContent !== false) {
-            $mail->addStringAttachment($fileContent, $data['attachmentName']);
-        }
-    }
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL            => 'smtp://' . SMTP_HOST . ':' . SMTP_PORT,
+    CURLOPT_MAIL_FROM      => '<' . SMTP_FROM . '>',
+    CURLOPT_MAIL_RCPT      => ['<' . $to . '>'],
+    CURLOPT_USERNAME       => SMTP_USER,
+    CURLOPT_PASSWORD       => SMTP_PASS,
+    CURLOPT_USE_SSL        => CURLUSESSL_ALL,
+    CURLOPT_READDATA       => $fp,
+    CURLOPT_UPLOAD         => true,
+    CURLOPT_INFILESIZE     => strlen($rawEmail),
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT        => 30,
+]);
 
-    $mail->send();
-    echo json_encode(['status' => 'success', 'message' => 'Email sent to ' . $data['to']]);
+$result = curl_exec($ch);
+$errno  = curl_errno($ch);
+$errmsg = curl_error($ch);
+curl_close($ch);
+fclose($fp);
+unlink($tmpFile);
 
-} catch (Exception $e) {
+if ($errno) {
     http_response_code(500);
-    echo json_encode([
-        'status'  => 'error',
-        'message' => 'Mailer error: ' . $mail->ErrorInfo
-    ]);
+    echo json_encode(['status' => 'error', 'message' => 'SMTP error: ' . $errmsg]);
+} else {
+    echo json_encode(['status' => 'success', 'message' => 'Email sent to ' . $to]);
 }
